@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
@@ -25,18 +24,21 @@ Future<void> main() async {
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Static Polygon Geofencing',
       theme: ThemeData(primarySwatch: Colors.blue),
       home: const GeofenceHomeScreen(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
 
 class GeofenceHomeScreen extends StatefulWidget {
   const GeofenceHomeScreen({super.key});
+
   @override
   State<GeofenceHomeScreen> createState() => _GeofenceHomeScreenState();
 }
@@ -50,19 +52,30 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
   final String _sourceId = "home_polygon_source";
   final String _fillLayerId = "home_polygon_fill";
 
+  /*
+// my home location geofence area
+
   final List<geojson.Point> homePolygon = [
     geojson.Point(coordinates: geojson.Position(76.8358, 30.6633)),
     geojson.Point(coordinates: geojson.Position(76.8361, 30.6633)),
     geojson.Point(coordinates: geojson.Position(76.8361, 30.6636)),
     geojson.Point(coordinates: geojson.Position(76.8358, 30.6636)),
+  ];*/
+
+  final List<geojson.Point> homePolygon = [
+    geojson.Point(coordinates: geojson.Position(76.84770, 30.72320)), // SW
+    geojson.Point(coordinates: geojson.Position(76.84805, 30.72320)), // SE
+    geojson.Point(coordinates: geojson.Position(76.84805, 30.72342)), // NE
+    geojson.Point(coordinates: geojson.Position(76.84770, 30.72342)), // NW
   ];
 
   StreamSubscription<geolocator.Position>? _positionStream;
 
-  final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
 
   bool _wasInsidePolygon = true;
-  final double shrinkFactor = 0.5;
+  final double shrinkFactor = 1.5;
   List<mapbox.Position> userPath = [];
 
   @override
@@ -81,7 +94,9 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
   }
 
   Future<void> _initializeNotifications() async {
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
     const settings = InitializationSettings(android: androidSettings);
     await _localNotifications.initialize(settings);
   }
@@ -95,7 +110,12 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
       priority: Priority.high,
     );
     const notificationDetails = NotificationDetails(android: androidDetails);
-    await _localNotifications.show(0, 'Geofence Alert', message, notificationDetails);
+    await _localNotifications.show(
+      0,
+      'Geofence Alert',
+      message,
+      notificationDetails,
+    );
   }
 
   geojson.Position _calculateCentroid(List<geojson.Point> polygon) {
@@ -108,26 +128,44 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
     return geojson.Position(sumLng / polygon.length, sumLat / polygon.length);
   }
 
-  List<geojson.Point> _shrinkPolygon(List<geojson.Point> polygon, double factor) {
+  List<geojson.Point> _shrinkPolygon(
+    List<geojson.Point> polygon,
+    double factor,
+  ) {
     final centroid = _calculateCentroid(polygon);
     return polygon.map((point) {
-      final lng = centroid.lng + (point.coordinates.lng - centroid.lng) * factor;
-      final lat = centroid.lat + (point.coordinates.lat - centroid.lat) * factor;
+      final lng =
+          centroid.lng + (point.coordinates.lng - centroid.lng) * factor;
+      final lat =
+          centroid.lat + (point.coordinates.lat - centroid.lat) * factor;
       return geojson.Point(coordinates: geojson.Position(lng, lat));
     }).toList();
   }
 
   Future<void> _checkAndRequestPermissions() async {
+    if (await Permission.notification.isDenied) {
+      final status = await Permission.notification.request();
+      if (status.isDenied || status.isPermanentlyDenied) {
+        _showOpenAppSettingsDialog(
+          "Notification permission is required for alerts.",
+        );
+      }
+    }
+
     PermissionStatus locationStatus = await Permission.location.status;
     if (locationStatus.isDenied) {
       locationStatus = await Permission.location.request();
     }
     if (locationStatus.isDenied) {
-      _showPermissionDeniedDialog("Location permission is required to use this app.");
+      _showPermissionDeniedDialog(
+        "Location permission is required to use this app.",
+      );
       return;
     }
     if (locationStatus.isPermanentlyDenied) {
-      _showOpenAppSettingsDialog("Location permission is permanently denied. Please enable it in app settings.");
+      _showOpenAppSettingsDialog(
+        "Location permission is permanently denied. Please enable it in app settings.",
+      );
       return;
     }
 
@@ -137,7 +175,9 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
         debugPrint('Background location permission denied.');
       }
       if (backgroundStatus.isPermanentlyDenied) {
-        _showOpenAppSettingsDialog("Background Location permission is permanently denied. Please enable it in app settings.");
+        _showOpenAppSettingsDialog(
+          "Background Location permission is permanently denied. Please enable it in app settings.",
+        );
       }
     }
 
@@ -148,6 +188,7 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
   Future<void> _initializeInsideOutside() async {
     try {
       final pos = await geolocator.Geolocator.getCurrentPosition();
+
       final turf.Position userPos = turf.Position(pos.longitude, pos.latitude);
       final smallerPolygon = _shrinkPolygon(homePolygon, shrinkFactor);
       final List<turf.Position> polygonPositions = smallerPolygon
@@ -171,16 +212,18 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
         content: Text(message),
         actions: [
           TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _checkAndRequestPermissions();
-              },
-              child: const Text('Retry')),
+            onPressed: () {
+              Navigator.of(context).pop();
+              _checkAndRequestPermissions();
+            },
+            child: const Text('Retry'),
+          ),
           TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Cancel')),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: const Text('Cancel'),
+          ),
         ],
       ),
     );
@@ -201,68 +244,86 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
             child: const Text('Open Settings'),
           ),
           TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Cancel')),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            child: const Text('Cancel'),
+          ),
         ],
       ),
     );
   }
 
   void _startLocationUpdates() async {
-    final serviceEnabled = await geolocator.Geolocator.isLocationServiceEnabled();
+    final serviceEnabled =
+        await geolocator.Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       debugPrint('Location services are disabled.');
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Please enable location services'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enable location services')),
+      );
       return;
     }
 
-    _positionStream = geolocator.Geolocator.getPositionStream(
-      locationSettings: const geolocator.LocationSettings(
-        accuracy: geolocator.LocationAccuracy.best,
-        distanceFilter: 5,
-      ),
-    ).listen((position) async {
+    _positionStream =
+        geolocator.Geolocator.getPositionStream(
+          locationSettings: const geolocator.LocationSettings(
+            accuracy: geolocator.LocationAccuracy.best,
+            distanceFilter: 5,
+          ),
+        ).listen((position) async {
+          final currentPos = mapbox.Position(
+            position.longitude.toDouble(),
+            position.latitude.toDouble(),
+          );
 
-      final currentPos = mapbox.Position(position.longitude.toDouble(), position.latitude.toDouble());
+          setState(() {
+            userPath.add(currentPos);
+          });
 
-      setState(() {
-        userPath.add(currentPos);
-      });
-
-      _evaluateGeofence(position);
-      _moveCameraToPosition(position);
-      await _updateUserPathLine();
-      await _updateCurrentLocationMarker(currentPos);
-    });
+          _evaluateGeofence(position);
+          _moveCameraToPosition(position);
+          await _updateUserPathLine();
+          await _updateCurrentLocationMarker(currentPos);
+        });
   }
 
   void _evaluateGeofence(geolocator.Position position) {
-    final turf.Position userPosition = turf.Position(position.longitude.toDouble(), position.latitude.toDouble());
+    final turf.Position userPosition = turf.Position(
+      position.longitude.toDouble(),
+      position.latitude.toDouble(),
+    );
 
     final smallerPolygon = _shrinkPolygon(homePolygon, shrinkFactor);
 
     final List<turf.Position> polygonPositions = smallerPolygon
-        .map((p) => turf.Position(p.coordinates.lng.toDouble(), p.coordinates.lat.toDouble()))
+        .map(
+          (p) => turf.Position(
+            p.coordinates.lng.toDouble(),
+            p.coordinates.lat.toDouble(),
+          ),
+        )
         .toList();
 
     final turf.Feature<turf.Polygon> polygonFeature = turf.Feature(
       geometry: turf.Polygon(coordinates: [polygonPositions]),
     );
 
-    final bool isInside = turf.booleanPointInPolygon(userPosition, polygonFeature);
+    final bool isInside = turf.booleanPointInPolygon(
+      userPosition,
+      polygonFeature,
+    );
 
-    debugPrint('User position: (${position.latitude}, ${position.longitude}), isInside: $isInside, previous: $_wasInsidePolygon');
+    debugPrint(
+      'User position: (${position.latitude}, ${position.longitude}), isInside: $isInside, previous: $_wasInsidePolygon',
+    );
 
     if (_wasInsidePolygon && !isInside) {
       debugPrint('User exited polygon - showing notification');
-      _showNotification("You have exited your home boundary.");
+      _showNotification("You have exited your office boundary area.");
     } else if (!_wasInsidePolygon && isInside) {
       debugPrint('User entered polygon - showing notification');
-      _showNotification("You have entered your home boundary.");
+      _showNotification("You have entered your office boundary area.");
     }
 
     _wasInsidePolygon = isInside;
@@ -273,7 +334,10 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
       mapboxMap.setCamera(
         mapbox.CameraOptions(
           center: mapbox.Point(
-            coordinates: mapbox.Position(position.longitude.toDouble(), position.latitude.toDouble()),
+            coordinates: mapbox.Position(
+              position.longitude.toDouble(),
+              position.latitude.toDouble(),
+            ),
           ),
           zoom: 18,
         ),
@@ -291,10 +355,14 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
       return;
     }
 
-    // IMPORTANT FIX: Make sure polygon coordinates array is well formed
     final List<List<double>> coords = [
-      ...smallerPolygon.map((p) => [p.coordinates.lng.toDouble(), p.coordinates.lat.toDouble()]),
-      [smallerPolygon[0].coordinates.lng.toDouble(), smallerPolygon[0].coordinates.lat.toDouble()], // Close polygon
+      ...smallerPolygon.map(
+        (p) => [p.coordinates.lng.toDouble(), p.coordinates.lat.toDouble()],
+      ),
+      [
+        smallerPolygon[0].coordinates.lng.toDouble(),
+        smallerPolygon[0].coordinates.lat.toDouble(),
+      ], // Close polygon
     ];
 
     final geoJsonData = {
@@ -330,8 +398,8 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
       mapbox.FillLayer(
         id: _fillLayerId,
         sourceId: _sourceId,
-        fillColor: const Color(0xFF3BB2D0).value, // cyan-ish fill color
-        fillOutlineColor: const Color(0xFF3887BE).value, // darker outline
+        fillColor: const Color(0xFF3BB2D0).value,
+        fillOutlineColor: const Color(0xFF3887BE).value,
         fillOpacity: 0.6,
       ),
     );
@@ -361,10 +429,7 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
 
     final geoJsonLine = jsonEncode({
       "type": "Feature",
-      "geometry": {
-        "type": "LineString",
-        "coordinates": coords,
-      },
+      "geometry": {"type": "LineString", "coordinates": coords},
       "properties": {},
     });
 
@@ -384,7 +449,8 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
 
   Future<void> _updateCurrentLocationMarker(mapbox.Position position) async {
     if (pointAnnotationManager == null) {
-      pointAnnotationManager = await mapboxMap.annotations.createPointAnnotationManager();
+      pointAnnotationManager = await mapboxMap.annotations
+          .createPointAnnotationManager();
     }
 
     if (currentLocationAnnotation != null) {

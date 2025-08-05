@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
         android:label="geofence_poc_stat"
@@ -36,9 +37,9 @@
             android:value="2" />
 
         <!-- Mapbox Access Token meta-data - PUT INSIDE <application> -->
-        <meta-data
-            android:name="com.mapbox.AccessToken"
-            android:value="pk.eyJ1IjoibWFudGhhbjI3NSIsImEiOiJjbWRxdzdnMG4wYWJkMm1zYXA4NG9ma2FpIn0.qBonAuieOH-QAWryjq8a0Q"/>
+<!--        <meta-data-->
+<!--            android:name="com.mapbox.AccessToken"-->
+<!--            android:value="pk.eyJ1IjoibWFudGhhbjI3NSIsImEiOiJjbWRxdzdnMG4wYWJkMm1zYXA4NG9ma2FpIn0.qBonAuieOH-QAWryjq8a0Q"/>-->
 
     </application>
 
