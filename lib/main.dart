@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart' as mapbox;
 import 'package:geolocator/geolocator.dart' as geolocator;
@@ -45,22 +47,13 @@ class GeofenceHomeScreen extends StatefulWidget {
 
 class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
   late mapbox.MapboxMap mapboxMap;
-
   mapbox.PointAnnotationManager? pointAnnotationManager;
   mapbox.PointAnnotation? currentLocationAnnotation;
 
   final String _sourceId = "home_polygon_source";
   final String _fillLayerId = "home_polygon_fill";
-
-  /*
-// my home location geofence area
-
-  final List<geojson.Point> homePolygon = [
-    geojson.Point(coordinates: geojson.Position(76.8358, 30.6633)),
-    geojson.Point(coordinates: geojson.Position(76.8361, 30.6633)),
-    geojson.Point(coordinates: geojson.Position(76.8361, 30.6636)),
-    geojson.Point(coordinates: geojson.Position(76.8358, 30.6636)),
-  ];*/
+  final String _lineSourceId = 'user_path_source';
+  final String _lineLayerId = 'user_path_layer';
 
   final List<geojson.Point> homePolygon = [
     geojson.Point(coordinates: geojson.Position(76.84770, 30.72320)), // SW
@@ -70,13 +63,12 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
   ];
 
   StreamSubscription<geolocator.Position>? _positionStream;
-
   final FlutterLocalNotificationsPlugin _localNotifications =
-      FlutterLocalNotificationsPlugin();
-
+  FlutterLocalNotificationsPlugin();
   bool _wasInsidePolygon = true;
   final double shrinkFactor = 1.5;
   List<mapbox.Position> userPath = [];
+  Uint8List? _markerImageData;
 
   @override
   void initState() {
@@ -85,6 +77,17 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
       _showNotification("App started - notification test");
     });
     _checkAndRequestPermissions();
+    _loadMarkerImage();
+  }
+
+  Future<void> _loadMarkerImage() async {
+    try {
+      final ByteData bytes = await rootBundle.load('assets/marker.png');
+      _markerImageData = bytes.buffer.asUint8List();
+      debugPrint('Marker image loaded successfully');
+    } catch (e) {
+      debugPrint('Error loading marker image: $e');
+    }
   }
 
   @override
@@ -94,9 +97,7 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
   }
 
   Future<void> _initializeNotifications() async {
-    const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
-    );
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const settings = InitializationSettings(android: androidSettings);
     await _localNotifications.initialize(settings);
   }
@@ -128,16 +129,11 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
     return geojson.Position(sumLng / polygon.length, sumLat / polygon.length);
   }
 
-  List<geojson.Point> _shrinkPolygon(
-    List<geojson.Point> polygon,
-    double factor,
-  ) {
+  List<geojson.Point> _shrinkPolygon(List<geojson.Point> polygon, double factor) {
     final centroid = _calculateCentroid(polygon);
     return polygon.map((point) {
-      final lng =
-          centroid.lng + (point.coordinates.lng - centroid.lng) * factor;
-      final lat =
-          centroid.lat + (point.coordinates.lat - centroid.lat) * factor;
+      final lng = centroid.lng + (point.coordinates.lng - centroid.lng) * factor;
+      final lat = centroid.lat + (point.coordinates.lat - centroid.lat) * factor;
       return geojson.Point(coordinates: geojson.Position(lng, lat));
     }).toList();
   }
@@ -188,7 +184,6 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
   Future<void> _initializeInsideOutside() async {
     try {
       final pos = await geolocator.Geolocator.getCurrentPosition();
-
       final turf.Position userPos = turf.Position(pos.longitude, pos.latitude);
       final smallerPolygon = _shrinkPolygon(homePolygon, shrinkFactor);
       final List<turf.Position> polygonPositions = smallerPolygon
@@ -256,7 +251,7 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
 
   void _startLocationUpdates() async {
     final serviceEnabled =
-        await geolocator.Geolocator.isLocationServiceEnabled();
+    await geolocator.Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       debugPrint('Location services are disabled.');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -295,24 +290,15 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
     );
 
     final smallerPolygon = _shrinkPolygon(homePolygon, shrinkFactor);
-
     final List<turf.Position> polygonPositions = smallerPolygon
-        .map(
-          (p) => turf.Position(
-            p.coordinates.lng.toDouble(),
-            p.coordinates.lat.toDouble(),
-          ),
-        )
+        .map((p) => turf.Position(p.coordinates.lng.toDouble(), p.coordinates.lat.toDouble()))
         .toList();
 
     final turf.Feature<turf.Polygon> polygonFeature = turf.Feature(
       geometry: turf.Polygon(coordinates: [polygonPositions]),
     );
 
-    final bool isInside = turf.booleanPointInPolygon(
-      userPosition,
-      polygonFeature,
-    );
+    final bool isInside = turf.booleanPointInPolygon(userPosition, polygonFeature);
 
     debugPrint(
       'User position: (${position.latitude}, ${position.longitude}), isInside: $isInside, previous: $_wasInsidePolygon',
@@ -357,7 +343,7 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
 
     final List<List<double>> coords = [
       ...smallerPolygon.map(
-        (p) => [p.coordinates.lng.toDouble(), p.coordinates.lat.toDouble()],
+            (p) => [p.coordinates.lng.toDouble(), p.coordinates.lat.toDouble()],
       ),
       [
         smallerPolygon[0].coordinates.lng.toDouble(),
@@ -382,13 +368,12 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
       if (await mapboxMap.style.styleLayerExists(_fillLayerId)) {
         await mapboxMap.style.removeStyleLayer(_fillLayerId);
       }
-    } catch (_) {}
-
-    try {
       if (await mapboxMap.style.styleSourceExists(_sourceId)) {
         await mapboxMap.style.removeStyleSource(_sourceId);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Error removing existing layers/sources: $e');
+    }
 
     await mapboxMap.style.addSource(
       mapbox.GeoJsonSource(id: _sourceId, data: geoJsonString),
@@ -406,20 +391,16 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
   }
 
   Future<void> _updateUserPathLine() async {
-    const String lineSourceId = 'user_path_source';
-    const String lineLayerId = 'user_path_layer';
-
     try {
-      if (await mapboxMap.style.styleLayerExists(lineLayerId)) {
-        await mapboxMap.style.removeStyleLayer(lineLayerId);
+      if (await mapboxMap.style.styleLayerExists(_lineLayerId)) {
+        await mapboxMap.style.removeStyleLayer(_lineLayerId);
       }
-    } catch (_) {}
-
-    try {
-      if (await mapboxMap.style.styleSourceExists(lineSourceId)) {
-        await mapboxMap.style.removeStyleSource(lineSourceId);
+      if (await mapboxMap.style.styleSourceExists(_lineSourceId)) {
+        await mapboxMap.style.removeStyleSource(_lineSourceId);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Error removing existing path layers/sources: $e');
+    }
 
     if (userPath.length < 2) {
       return;
@@ -434,13 +415,13 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
     });
 
     await mapboxMap.style.addSource(
-      mapbox.GeoJsonSource(id: lineSourceId, data: geoJsonLine),
+      mapbox.GeoJsonSource(id: _lineSourceId, data: geoJsonLine),
     );
 
     await mapboxMap.style.addLayer(
       mapbox.LineLayer(
-        id: lineLayerId,
-        sourceId: lineSourceId,
+        id: _lineLayerId,
+        sourceId: _lineSourceId,
         lineColor: 0xFF007AFF,
         lineWidth: 4,
       ),
@@ -449,22 +430,33 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
 
   Future<void> _updateCurrentLocationMarker(mapbox.Position position) async {
     if (pointAnnotationManager == null) {
-      pointAnnotationManager = await mapboxMap.annotations
-          .createPointAnnotationManager();
+      debugPrint('PointAnnotationManager not initialized yet');
+      return;
     }
 
-    if (currentLocationAnnotation != null) {
-      await pointAnnotationManager!.delete(currentLocationAnnotation!);
-      currentLocationAnnotation = null;
+    if (_markerImageData == null) {
+      debugPrint('Marker image data is not loaded yet.');
+      return;
     }
 
-    currentLocationAnnotation = await pointAnnotationManager!.create(
-      mapbox.PointAnnotationOptions(
-        geometry: mapbox.Point(coordinates: position),
-        iconImage: "marker-15", // Mapbox default marker icon
-        iconSize: 1.5,
-      ),
-    );
+    try {
+      // Remove existing marker if it exists
+      if (currentLocationAnnotation != null) {
+        await pointAnnotationManager!.delete(currentLocationAnnotation!);
+      }
+
+      // Create new marker
+      currentLocationAnnotation = await pointAnnotationManager!.create(
+        mapbox.PointAnnotationOptions(
+          geometry: mapbox.Point(coordinates: position),
+          image: _markerImageData!,
+          iconSize: 1.5,
+        ),
+      );
+      debugPrint('Marker created at ${position.lng}, ${position.lat}');
+    } catch (e) {
+      debugPrint('Error updating location marker: $e');
+    }
   }
 
   @override
@@ -480,7 +472,13 @@ class _GeofenceHomeScreenState extends State<GeofenceHomeScreen> {
         cameraOptions: mapbox.CameraOptions(center: center, zoom: 18),
         onMapCreated: (controller) async {
           mapboxMap = controller;
+          pointAnnotationManager = await mapboxMap.annotations.createPointAnnotationManager();
           await _addPolygonToMap();
+
+          // If we already have location data, create the marker immediately
+          if (userPath.isNotEmpty) {
+            await _updateCurrentLocationMarker(userPath.last);
+          }
         },
       ),
     );
